@@ -223,7 +223,16 @@ fun LansarePlanScreen(
                                     if (qEdit < 0) { statusMesajText = "Introduceți o cantitate validă!"; return@Button
                                     }
                                     seIncarca = true
-                                    firestore.collection("comenzi_productie").document(mIdEdit).set(mapOf("cantitateScaune" to qEdit, "stare" to stareEditataSelectata), SetOptions.merge())
+                                    val dateUpdate = mutableMapOf<String, Any>(
+                                        "cantitateScaune" to qEdit,
+                                        "stare" to stareEditataSelectata
+                                    )
+                                    // Dacă trecem din nou în "In Lucru" sau lansăm o cantitate nouă, resetăm timestampLansare
+                                    val stareVeche = planActiv["stare"]?.toString() ?: ""
+                                    if (stareEditataSelectata == "In Lucru" && (stareVeche != "In Lucru" || planActiv["timestampLansare"] == null)) {
+                                        dateUpdate["timestampLansare"] = System.currentTimeMillis()
+                                    }
+                                    firestore.collection("comenzi_productie").document(mIdEdit).set(dateUpdate, SetOptions.merge())
                                         .addOnSuccessListener { seIncarca = false; planDeEditatAcum = null; statusMesajText = "Planul '$mNumeEdit' a fost actualizat live!" }
                                 },
                                 modifier = Modifier.weight(1.5f), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)), enabled = !seIncarca

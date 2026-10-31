@@ -94,6 +94,7 @@ fun TrasabilitateArboreScreen(
     val retetaBOM = (modelActiv?.get("retetaBOM") as? List<*>) ?: emptyList<Any>()
     val cantitateScauneTinta = (modelActiv?.get("cantitateScaune") as? Long)?.toInt() ?: 0
     val modelNumeText = modelActiv?.get("modelNume")?.toString() ?: "Produs"
+    val timestampLansareModel = (modelActiv?.get("timestampLansare") as? Long) ?: 0L
 
     // Functie de extragere detalii piesa
     fun parseazaReper(nod: Any?): ReperDetaliuTrasabilitate {
@@ -107,7 +108,11 @@ fun TrasabilitateArboreScreen(
 
         val tintaTotala = cantitateScauneTinta * buc
         val realizat = listaIstoricProductie
-            .filter { it["articolId"]?.toString() == rId && it["atelier"]?.toString() == atelier }
+            .filter {
+                it["articolId"]?.toString() == rId &&
+                it["atelier"]?.toString() == atelier &&
+                ((it["timestamp"] as? Long) ?: 0L) >= timestampLansareModel
+            }
             .sumOf { (it["cantitateOk"] as? Long)?.toInt() ?: 0 }
 
         val idDocStoc = "${rId}_$atelier"
@@ -142,7 +147,11 @@ fun TrasabilitateArboreScreen(
 
     // Produs Finit final (Atelier 4)
     val realizatProdusFinit = listaIstoricProductie
-        .filter { (it["articolId"]?.toString() == modelSelectatId || it["modelId"]?.toString() == modelSelectatId) && it["atelier"]?.toString() == "Atelier4" }
+        .filter {
+            (it["articolId"]?.toString() == modelSelectatId || it["modelId"]?.toString() == modelSelectatId) &&
+            it["atelier"]?.toString() == "Atelier4" &&
+            ((it["timestamp"] as? Long) ?: 0L) >= timestampLansareModel
+        }
         .sumOf { (it["cantitateOk"] as? Long)?.toInt() ?: 0 }
     val procentFinal = if (cantitateScauneTinta > 0) (realizatProdusFinit.toFloat() / cantitateScauneTinta).coerceIn(0f, 1f) else 0f
 

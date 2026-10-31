@@ -77,6 +77,7 @@ fun SarciniMaistriScreen(
                 val cantitateScauneFinale = (comanda["cantitateScaune"] as? Long)?.toInt() ?: 0
                 val modelNumeScaun = comanda["modelNume"]?.toString() ?: "Scaun"
                 val retetaBOM = comanda["retetaBOM"] as? List<Any> ?: emptyList()
+                val timestampLansareComanda = (comanda["timestampLansare"] as? Long) ?: 0L
 
                 retetaBOM.forEach { nod ->
                     val comp = nod as? Map<String, Any> ?: emptyMap()
@@ -93,7 +94,11 @@ fun SarciniMaistriScreen(
                         ?: listaStocuriFaze.find { it["idDoc"] == reperId }
                     val stocCurent = (documentStoc?.get("stocDisponibil") as? Long)?.toInt() ?: 0
                     val realizatCumulat = istoricRaportariPersonale
-                        .filter { it["articolId"]?.toString() == reperId && it["atelier"]?.toString() == atelierPiesa }
+                        .filter {
+                            it["articolId"]?.toString() == reperId &&
+                            it["atelier"]?.toString() == atelierPiesa &&
+                            ((it["timestamp"] as? Long) ?: 0L) >= timestampLansareComanda
+                        }
                         .sumOf { (it["cantitateOk"] as? Long)?.toInt() ?: 0 }
 
                     val ramas = (tintaTotalaPiesa - realizatCumulat).coerceAtLeast(0)
@@ -139,7 +144,11 @@ fun SarciniMaistriScreen(
                     val documentStoc = listaStocuriFaze.find { it["idDoc"] == stocIdDoc }
                     val stocCurent = (documentStoc?.get("stocDisponibil") as? Long)?.toInt() ?: 0
                     val realizatScaune = istoricRaportariPersonale
-                        .filter { it["articolId"]?.toString() == modelIdScaun && it["atelier"]?.toString() == atelierScaunFinal }
+                        .filter {
+                            it["articolId"]?.toString() == modelIdScaun &&
+                            it["atelier"]?.toString() == atelierScaunFinal &&
+                            ((it["timestamp"] as? Long) ?: 0L) >= timestampLansareComanda
+                        }
                         .sumOf { (it["cantitateOk"] as? Long)?.toInt() ?: 0 }
 
                     val ramas = (cantitateScauneFinale - realizatScaune).coerceAtLeast(0)

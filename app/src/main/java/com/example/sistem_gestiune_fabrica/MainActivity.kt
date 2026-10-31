@@ -234,6 +234,7 @@ class MainActivity : ComponentActivity() {
                         val planRef = comandaVizualizataAcum ?: return Pair(0f, "0 / 0 buc")
                         val cantitateScauneTinta = (planRef["cantitateScaune"] as? Long)?.toInt() ?: 0
                         val modelIdScaun = planRef["modelId"]?.toString() ?: ""
+                        val timestampLansareComanda = (planRef["timestampLansare"] as? Long) ?: 0L
                         if (cantitateScauneTinta <= 0 || modelIdScaun.isEmpty()) return Pair(0f, "0 / 0 buc")
                         if (atelierCod == "Atelier4") {
                             val realizatScauneIstoric = istoricProductieTotal
@@ -241,7 +242,8 @@ class MainActivity : ComponentActivity() {
                                     val matchAtelier = document["atelier"]?.toString() == "Atelier4"
                                     val idArticol = document["articolId"]?.toString() ?: ""
                                     val idModel = document["modelId"]?.toString() ?: ""
-                                    matchAtelier && (idArticol == modelIdScaun || idModel == modelIdScaun)
+                                    val ts = (document["timestamp"] as? Long) ?: 0L
+                                    matchAtelier && (idArticol == modelIdScaun || idModel == modelIdScaun) && ts >= timestampLansareComanda
                                 }
                                 .sumOf { (it["cantitateOk"] as? Long)?.toInt() ?: 0 }
                             val pro = (realizatScauneIstoric.toFloat() / cantitateScauneTinta).coerceIn(0f, 1f)
@@ -250,7 +252,7 @@ class MainActivity : ComponentActivity() {
                         val retetaBOMAList = planRef["retetaBOM"] as? List<*> ?: emptyList<Any>()
 
                         var totalTintaPieseInitiala = 0
-                        var totalRaportatIstoricAtelier = 0
+                        var totalRaportatPieseAtelierPlatit = 0
                         var aGasitPieseInReteta = false
                         for (obiectInReteta in retetaBOMAList) {
                             val comp = obiectInReteta as? Map<*, *> ?: continue
@@ -268,35 +270,44 @@ class MainActivity : ComponentActivity() {
                                 val deConsumatPerScaun = (comp["cantitateNecesara"] as? Long)?.toInt() ?: 1
                                 if (rId.isNotEmpty()) {
                                     aGasitPieseInReteta = true
-                                    totalTintaPieseInitiala += (cantitateScauneTinta * deConsumatPerScaun)
+                                    val tintaReper = cantitateScauneTinta * deConsumatPerScaun
+                                    totalTintaPieseInitiala += tintaReper
                                     val raportatPerReper = istoricProductieTotal
                                         .filter { document ->
                                             val sct = (document["atelier"]?.toString() ?: "").trim()
                                             val idArt = document["articolId"]?.toString() ?: ""
+                                            val ts = (document["timestamp"] as? Long) ?: 0L
                                             val sctMatch = if (atelierCod == "Atelier0") {
                                                 sct.equals("Atelier0", ignoreCase = true) || sct.equals("AtelierO", ignoreCase = true)
                                             } else {
                                                 sct.equals(atelierCod, ignoreCase = true)
                                             }
-                                            sctMatch && idArt == rId
+                                            sctMatch && idArt == rId && ts >= timestampLansareComanda
                                         }
                                         .sumOf { (it["cantitateOk"] as? Long)?.toInt() ?: 0 }
-                                    totalRaportatIstoricAtelier += raportatPerReper
+                                    // Dacă s-a declarat peste planul țintă, se ia maxim ținta pentru procentaj corect
+                                    totalRaportatPieseAtelierPlatit += raportatPerReper.coerceAtMost(tintaReper)
                                 }
                             }
                         }
                         if (!aGasitPieseInReteta) {
                             return Pair(0f, "Fără piese în rețetă")
                         }
-                        val pro = if (totalTintaPieseInitiala > 0) (totalRaportatIstoricAtelier.toFloat() / totalTintaPieseInitiala).coerceIn(0f, 1f) else 0f
-                        return Pair(pro, "$totalRaportatIstoricAtelier / $totalTintaPieseInitiala buc")
+                        val pro = if (totalTintaPieseInitiala > 0) (totalRaportatPieseAtelierPlatit.toFloat() / totalTintaPieseInitiala).coerceIn(0f, 1f) else 0f
+                        return Pair(pro, "$totalRaportatPieseAtelierPlatit / $totalTintaPieseInitiala buc")
                     }
                     val (procentScaune, textScaune, modelNume) = if (comandaVizualizataAcum != null) {
                         val mId = comandaVizualizataAcum["modelId"]?.toString() ?: ""
                         val mNumeText = comandaVizualizataAcum["modelNume"]?.toString() ?: "Scaun"
                         val tinta = (comandaVizualizataAcum["cantitateScaune"] as? Long)?.toInt() ?: 0
-                        val realizatScauneIstoric = istoricProductieTotal.filter { (it["articolId"]?.toString() == mId || it["modelId"]?.toString() == mId) && it["atelier"]?.toString() == "Atelier4" }.sumOf { (it["cantitateOk"] as? Long)?.toInt() ?: 0 }
-                        val pro = if (tinta > 0) (realizatScauneIstoric.toFloat() / tinta).coerceIn(0f, 1f) else 0f
+                        val tsLansare = (comandaVizualizataAcum["timestampLansare"] as? Long) ?: 0L
+                        val realizatScauneIstoric = istoricProductieTotal.filter {
+                            (it["articolId"]?.toString() == mId || it["modelId"]?.toString() == mId) &&
+                            it["atelier"]?.toString() == "Atelier4" &&
+                            ((it["timestamp"] as? Long) ?: 0L) >= tsLansare
+                        }.sumOf { (it["cantitateOk"] as? Long)?.toInt() ?: 0 }
+                        val realizatLimitat = realizatScauneIstoric.coerceAtMost(tinta)
+                        val pro = if (tinta > 0) (realizatLimitat.toFloat() / tinta).coerceIn(0f, 1f) else 0f
                         Triple(pro, "$realizatScauneIstoric / $tinta buc ambalate complet", mNumeText)
                     } else {
                         Triple(0f, "Niciun plan în execuție curent", "FĂRĂ PLAN ACTIV")

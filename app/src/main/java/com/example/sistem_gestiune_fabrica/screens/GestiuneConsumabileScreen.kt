@@ -25,10 +25,22 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.graphics.pdf.PdfDocument
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import java.io.File
+import java.io.FileOutputStream
+import java.math.BigDecimal
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -411,6 +423,128 @@ fun GestiuneConsumabileScreen(
         statusMesaj = "Sincronizare retroactivă finalizată! Toate consumurile din producție au fost recalculate."
     }
 
+    val context = LocalContext.current
+
+    fun formateazaNumarPlain(valoare: Double): String {
+        return BigDecimal.valueOf(valoare).stripTrailingZeros().toPlainString()
+    }
+
+    fun exportaRaportStocuriAuxiliarePdf() {
+        try {
+            val pdfDocument = PdfDocument()
+            val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // Format A4 portrait
+            val page = pdfDocument.startPage(pageInfo)
+            val canvas = page.canvas
+
+            val paintHeader = Paint().apply {
+                color = AndroidColor.rgb(0, 105, 92) // Verde petrol
+                textSize = 18f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            val paintSub = Paint().apply {
+                color = AndroidColor.DKGRAY
+                textSize = 10f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                isAntiAlias = true
+            }
+            val paintTableHeader = Paint().apply {
+                color = AndroidColor.BLACK
+                textSize = 11f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            val paintText = Paint().apply {
+                color = AndroidColor.BLACK
+                textSize = 10f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                isAntiAlias = true
+            }
+            val paintTextBold = Paint().apply {
+                color = AndroidColor.rgb(0, 77, 64)
+                textSize = 10f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                isAntiAlias = true
+            }
+            val paintLinie = Paint().apply {
+                color = AndroidColor.LTGRAY
+                strokeWidth = 1f
+            }
+
+            var y = 50f
+            canvas.drawText("RAPORT SITUAȚIE STOC CONSUMABILE & AUXILIARE", 35f, y, paintHeader)
+            y += 18f
+            val dataGenerare = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date())
+            canvas.drawText("Generat la data: $dataGenerare  •  Operator: $usernameCurent", 35f, y, paintSub)
+            y += 15f
+            canvas.drawLine(35f, y, 560f, y, paintLinie)
+
+            y += 25f
+            // Cap tabel
+            canvas.drawText("Nr.", 35f, y, paintTableHeader)
+            canvas.drawText("Denumire Consumabil / Auxiliar", 65f, y, paintTableHeader)
+            canvas.drawText("Stoc Curent", 340f, y, paintTableHeader)
+            canvas.drawText("UM", 440f, y, paintTableHeader)
+            canvas.drawText("Status Stoc", 490f, y, paintTableHeader)
+
+            y += 8f
+            canvas.drawLine(35f, y, 560f, y, paintLinie)
+            y += 16f
+
+            if (listaStocuriConsumabile.isEmpty()) {
+                canvas.drawText("Nu există consumabile înregistrate în sistem.", 35f, y, paintText)
+                y += 20f
+            } else {
+                listaStocuriConsumabile.sortedBy { it["numeConsumabil"]?.toString() ?: "" }.forEachIndexed { index, stocDoc ->
+                    if (y > 780f) return@forEachIndexed // Siguranță limită pagină
+
+                    val nume = stocDoc["numeConsumabil"]?.toString() ?: "Consumabil"
+                    val cant = (stocDoc["stocDisponibil"] as? Number)?.toDouble() ?: 0.0
+                    val um = stocDoc["unitate"]?.toString() ?: "buc"
+                    val esteScazut = cant <= 5.0
+
+                    canvas.drawText("${index + 1}.", 35f, y, paintSub)
+                    canvas.drawText(nume, 65f, y, paintTextBold)
+                    canvas.drawText(formateazaNumarPlain(cant), 340f, y, paintText)
+                    canvas.drawText(um, 440f, y, paintText)
+                    val statusText = if (esteScazut) "CRITIC" else "OPTIM"
+                    canvas.drawText(statusText, 490f, y, if (esteScazut) paintHeader else paintSub)
+
+                    y += 6f
+                    canvas.drawLine(35f, y, 560f, y, paintLinie)
+                    y += 16f
+                }
+            }
+
+            // Footer
+            y = 810f
+            canvas.drawLine(35f, y, 560f, y, paintLinie)
+            canvas.drawText("Document oficial de gestiune stocuri auxiliare • Tipărit din Sistem Gestiune Fabrică", 35f, y + 15f, paintSub)
+
+            pdfDocument.finishPage(page)
+
+            val folderCache = File(context.cacheDir, "rapoarte").apply { if (!exists()) mkdirs() }
+            val fisierDestinatie = File(folderCache, "Raport_Stoc_Consumabile_Auxiliare.pdf")
+            val outputStream = FileOutputStream(fisierDestinatie)
+            pdfDocument.writeTo(outputStream)
+            outputStream.close()
+            pdfDocument.close()
+
+            val uriSecurizat = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", fisierDestinatie)
+            val intentiePartajare = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uriSecurizat)
+                putExtra(Intent.EXTRA_SUBJECT, "Raport Stoc Consumabile și Auxiliare")
+                putExtra(Intent.EXTRA_TEXT, "Atașat raportul actualizat al stocurilor de consumabile și materiale auxiliare.")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intentiePartajare, "Exportă Raport Stoc Auxiliare PDF"))
+            statusMesaj = "Raportul PDF a fost generat și partajat cu succes!"
+        } catch (e: Exception) {
+            statusMesaj = "Eroare la generarea raportului PDF: ${e.message}"
+        }
+    }
+
     Scaffold(
         topBar = {
             Column(modifier = Modifier.fillMaxWidth().background(Color.White).padding(16.dp)) {
@@ -506,15 +640,29 @@ fun GestiuneConsumabileScreen(
             // ==================== TAB 1: STOCURI LIVE & INTRARE ====================
             if (tabSelectat == "STOCURI") {
                 item {
-                    Button(
-                        onClick = { afiseazaDialogIntrare = !afiseazaDialogIntrare },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth().height(46.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (afiseazaDialogIntrare) "ASCUNDE FORMULAR INTRARE ▲" else "➕ ADĂUGARE / INTRARE STOC NOU CONSUMABIL", fontWeight = FontWeight.Bold)
+                        Button(
+                            onClick = { afiseazaDialogIntrare = !afiseazaDialogIntrare },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00695C)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1.3f).height(46.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (afiseazaDialogIntrare) "ASCUNDE ▲" else "➕ INTRARE STOC", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = { exportaRaportStocuriAuxiliarePdf() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1.1f).height(46.dp)
+                        ) {
+                            Text("📄 EXPORTĂ PDF", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
                     }
                 }
 

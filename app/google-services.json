@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1093054680758",
+    "project_id": "sistemgestiunefabrica",
+    "storage_bucket": "sistemgestiunefabrica.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1093054680758:android:a3e74a9e62501d268fe017",
+        "android_client_info": {
+          "package_name": "com.example.sistem_gestiune_fabrica"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBPE1wPuHAY44L411Wben_0bRkYUipRLoM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

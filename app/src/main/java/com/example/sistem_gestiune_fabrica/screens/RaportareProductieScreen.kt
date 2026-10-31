@@ -75,6 +75,7 @@ fun RaportareProductieScreen(
     // --- CĂUTARE ȘI FILTRE INTELIGENTE PENTRU RAPIDITATE ---
     var textCautarePiesa by remember { mutableStateOf("") }
     var filtruModelSelectat by remember { mutableStateOf("TOATE") } // Filtru pe model/scaun
+    var filtruIstoricPerioada by remember { mutableStateOf("ASTAZI") } // "ASTAZI", "ULTIMELE_3_ZILE", "SAPTAMANA", "TOATE"
 
     var tabSelectatAtelier0 by remember { mutableStateOf("LOTURI") }
     var denumireReperGenericText by remember { mutableStateOf("") }
@@ -114,6 +115,7 @@ fun RaportareProductieScreen(
                 val cantitateScauneFinale = (comanda["cantitateScaune"] as? Long)?.toInt() ?: 0
                 val modelNumeScaun = comanda["modelNume"]?.toString() ?: "Scaun"
                 val retetaBOM = comanda["retetaBOM"] as? List<Any> ?: emptyList()
+                val timestampLansareComanda = (comanda["timestampLansare"] as? Long) ?: 0L
 
                 retetaBOM.forEach { nod ->
                     val comp = nod as? Map<String, Any> ?: emptyMap()
@@ -132,8 +134,13 @@ fun RaportareProductieScreen(
                     if (areDreptPeAtelier && reperId.isNotEmpty()) {
                         val idDocStoc = "${reperId}_$atelierPiesa"
 
+                        // Realizările se cumulează strict de la momentul lansării lotului curent
                         val realizatCumulatIstoric = istoricRaportariPersonale
-                            .filter { it["articolId"]?.toString() == reperId && it["atelier"]?.toString() == atelierPiesa }
+                            .filter {
+                                it["articolId"]?.toString() == reperId &&
+                                it["atelier"]?.toString() == atelierPiesa &&
+                                ((it["timestamp"] as? Long) ?: 0L) >= timestampLansareComanda
+                            }
                             .sumOf { (it["cantitateOk"] as? Long)?.toInt() ?: 0 }
 
                         // Căutăm stocul cu sufixul atelierului, dacă nu găsim, încercăm fără sufix
@@ -166,8 +173,13 @@ fun RaportareProductieScreen(
                 if (ateliereUtilizator.contains(atelierFinalScaun) && modelIdScaun.isNotEmpty()) {
                     val idDocStoc = "${modelIdScaun}_$atelierFinalScaun"
 
+                    // Realizările produsului finit se cumulează de la momentul lansării lotului curent
                     val realizatScauneIstoric = istoricRaportariPersonale
-                        .filter { it["articolId"]?.toString() == modelIdScaun && it["atelier"]?.toString() == atelierFinalScaun }
+                        .filter {
+                            it["articolId"]?.toString() == modelIdScaun &&
+                            it["atelier"]?.toString() == atelierFinalScaun &&
+                            ((it["timestamp"] as? Long) ?: 0L) >= timestampLansareComanda
+                        }
                         .sumOf { (it["cantitateOk"] as? Long)?.toInt() ?: 0 }
 
                     val stocFizicScauneMags = (listaStocuriFaze.find { it["idDoc"] == idDocStoc }?.get("stocDisponibil") as? Long)?.toInt() ?: 0
@@ -899,12 +911,55 @@ fun RaportareProductieScreen(
             }
         }
         item {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text("Istoricul Raportărilor tale din Schimb:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Istoricul Raportărilor tale:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(
+                    "ASTAZI" to "Azi",
+                    "ULTIMELE_3_ZILE" to "3 Zile",
+                    "SAPTAMANA" to "7 Zile",
+                    "TOATE" to "Toate"
+                ).forEach { (cod, label) ->
+                    FilterChip(
+                        selected = filtruIstoricPerioada == cod,
+                        onClick = { filtruIstoricPerioada = cod },
+                        label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    )
+                }
+            }
         }
-        val fiseOperatorLogat = istoricRaportariPersonale.filter { it["operator"]?.toString() == usernameCurent }
+        val msPerZi = 24L * 3600L * 1000L
+        val acumMs = System.currentTimeMillis()
+        val calendarInceputAzi = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val fiseOperatorLogat = istoricRaportariPersonale.filter { fisa ->
+            val matchOp = fisa["operator"]?.toString() == usernameCurent
+            if (!matchOp) return@filter false
+            val ts = (fisa["timestamp"] as? Long) ?: 0L
+            when (filtruIstoricPerioada) {
+                "ASTAZI" -> ts >= calendarInceputAzi
+                "ULTIMELE_3_ZILE" -> ts >= (acumMs - 3L * msPerZi)
+                "SAPTAMANA" -> ts >= (acumMs - 7L * msPerZi)
+                else -> true
+            }
+        }
         if (fiseOperatorLogat.isEmpty()) {
-            item { Text("Nu ai înregistrat nicio raportare în tura curentă.", fontSize = 13.sp, color = Color.Gray) }
+            item { Text("Nu există raportări în perioada selectată.", fontSize = 13.sp, color = Color.Gray) }
         }
         items(fiseOperatorLogat) { fisa ->
             val fIdDoc = fisa["idDoc"]?.toString() ?: ""
